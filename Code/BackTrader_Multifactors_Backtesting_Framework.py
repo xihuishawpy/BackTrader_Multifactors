@@ -77,7 +77,7 @@ class momentum_factor_strategy(bt.Strategy):
     def log(self, txt, dt=None):
         ''' Logging function fot this strategy'''
         dt = dt or self.datas[0].datetime.date(0)
-        print('{}, {}'.format(dt.isoformat(), txt))
+        print(f'{dt.isoformat()}, {txt}')
 
     def __init__(self):
         #已清洗过的每日可用股票列表
@@ -97,12 +97,12 @@ class momentum_factor_strategy(bt.Strategy):
     def next(self):
         #记录交易日期
         self.bar_num+=1
-        print("当天日期:{}".format(str(self.datas[0].datetime.date(0))))
+        print(f"当天日期:{str(self.datas[0].datetime.date(0))}")
         #计算当日是否调仓
         if self.bar_num%self.p.interval==0 and self.bar_num > 3 * self.p.interval and self.datas[0].datetime.date(0) < datetime.date(2020,6,25):
             #得到当天的时间
             current_date=self.datas[0].datetime.date(0)
-            print("交易日日期:{}".format(str(self.datas[0].datetime.date(0))))
+            print(f"交易日日期:{str(self.datas[0].datetime.date(0))}")
             #获得上一调仓日时间
             prev_date=self.datas[0].datetime.date(-self.p.interval)
             #获取当日可行股票池
@@ -149,23 +149,23 @@ class momentum_factor_strategy(bt.Strategy):
 
             rbY = RobustScaler()
             Y = rbY.fit_transform(Y)
-            
+
             #用上期因子值与本期回报率进行训练
             svr.fit(X_p,np.ravel(Y)) 
-            
+
             #用本期因子值预测下期回报率
             svr_pred = svr.predict(rbX.transform(X))
-            
+
             a = rbY.inverse_transform(svr_pred.reshape(-1, 1))
             df_fac['pred'] = a
-            
+
             #按照预测得到的下期收益进行排序
             df_fac.sort_values(by="pred" , inplace=True, ascending=False)
             #取预测收益>0且排序靠前的stocknum只股票做多
             df_fac_pos = df_fac[df_fac['pred']>0]
             sort_list_pos = df_fac['code'].tolist()
             long_list=sort_list_pos[:self.p.stocknum]
-            
+
             #取预测收益<0且排序靠后的stocknum只股票做空
             df_fac_neg = df_fac[df_fac['pred']<0]
             sort_list_neg = df_fac_neg['code'].tolist()
@@ -176,7 +176,7 @@ class momentum_factor_strategy(bt.Strategy):
                 self.cancel(o)
             #重置订单列表
             self.order_list = []  
-            
+
             #若上期交易股票未出现在本期交易列表中，则平仓
             for i in self.last:
                 if i not in long_list and i not in short_list:
@@ -184,21 +184,21 @@ class momentum_factor_strategy(bt.Strategy):
                     print('sell 平仓', d._name, self.getposition(d).size)
                     o = self.close(data=d)
                     self.order_list.append(o) # 记录订单
-            
+
             self.log('当前总市值 %.2f' %(self.broker.getvalue()))
-            
+
             #获取当前账户价值
             total_value = self.broker.getvalue()
-            
+
             #对long_list中股票做多
             if len(long_list):
-        
+
                 #每只股票买入资金百分比，预留5%的资金以应付佣金和计算误差
                 buypercentage = (1-0.05)/2/len(long_list)
-    
+
                 #得到目标市值
                 targetvalue = buypercentage * total_value
-                
+
                 #依次买入
                 for d in long_list:
                     data = self.getdatabyname(d)
@@ -210,10 +210,10 @@ class momentum_factor_strategy(bt.Strategy):
 
             #对short_list中股票做空                    
             if len(short_list):
-                
+
                 #每只股票做空资金百分比，预留5%的资金以应付佣金和计算误差
                 buypercentage = (1-0.05)/2/len(short_list)
-    
+
                 #得到目标市值
                 targetvalue = buypercentage * total_value
                 #依次卖空
@@ -224,7 +224,7 @@ class momentum_factor_strategy(bt.Strategy):
                     o = self.order_target_size(data=d, target=-size)
                     #记录订单             
                     self.order_list.append(o) 
-            
+
             #跟踪上次交易的标的
             self.last = list(set(long_list).union(set(short_list)))  
             
@@ -267,10 +267,10 @@ class momentum_factor_strategy(bt.Strategy):
         #N-个股情绪因子，H-个股热度因子，TR_F-流通股换手率，CM-流通市值，TM-总市值（未使用）
         N,H,TR_F,CM,TM = [],[],[],[],[]
         #新建df_fac用于存储计算得到的因子值
-        df_fac = pd.DataFrame(columns=['code','news','heat','momentum_value','turnover_rate_f','circ_mv','total_mv']) 
+        df_fac = pd.DataFrame(columns=['code','news','heat','momentum_value','turnover_rate_f','circ_mv','total_mv'])
         for stock in stocklist:
             data=self.getdatabyname(stock)
-            
+
             #获取当期因子值的平均数
             for i in range(self.p.interval):
                 if data.news[(-i-prev*self.p.interval)] != 0:
@@ -281,26 +281,26 @@ class momentum_factor_strategy(bt.Strategy):
                 TR_F.append(data.turnover_rate_f[(-i-prev*self.p.interval)])
                 CM.append(data.circ_mv[(-i-prev*self.p.interval)])
                 TM.append(data.total_mv[(-i-prev*self.p.interval)])
-            
+
             #若当期无舆情因子数据，则不返回
             if N and H:
                 #缺失数据处理--若后续数据缺失，跳过该股票
                 try:
                     data.open[1]
                 except IndexError:
-                    print('%s后续数据缺失，跳过该股票'%(stock))
+                    print(f'{stock}后续数据缺失，跳过该股票')
                 else:
                     if data.close[0] != 0 and data.open[1] !=0:
                         #舆情因子取最近一天的值与当期平均值之和（加大最近一天的权重）
                         N = np.mean(N) + data.news[(-prev*self.p.interval)]
                         H = np.mean(H) + data.heat[(-prev*self.p.interval)]
-                    
+
                     try:
                         data.open[1+self.p.interval-prev*self.p.interval]
                     except IndexError:
-                        print('%s后续数据缺失，跳过该股票'%(stock))
+                        print(f'{stock}后续数据缺失，跳过该股票')
                     else:
-    
+
                         #计算当期动量
                         sell_ = data.open[1+self.p.interval-prev*self.p.interval]
                         buy_ = data.open[1-prev*self.p.interval]
@@ -309,7 +309,7 @@ class momentum_factor_strategy(bt.Strategy):
                         TR_F = np.mean(TR_F)
                         CM = np.mean(CM)
                         TM = np.mean(TM)
-    
+
                         new = pd.DataFrame({'code':stock,'news':N,'heat':H,'momentum_value':stock_momentum,
                                             'turnover_rate_f':TR_F,'circ_mv':CM,'total_mv':TM},index=[1]) 
                         df_fac = df_fac.append(new,ignore_index=True)
@@ -321,8 +321,7 @@ class momentum_factor_strategy(bt.Strategy):
         self.df_byday['Date'] = pd.to_datetime(self.df_byday['Date'])
         current_date = datetime.datetime.strptime(str(current_date),'%Y-%m-%d')
         df_day = self.df_byday[self.df_byday['Date']==current_date]
-        stocklist = literal_eval(df_day['stocklist'].tolist()[0])
-        return stocklist
+        return literal_eval(df_day['stocklist'].tolist()[0])
 
 
 ##########################
@@ -351,7 +350,7 @@ cerebro.broker.set_checksubmit(False)
 print('Starting Portfolio Value: %.2f' % cerebro.broker.getvalue())
 
 startcash=1000000.0
-cerebro.addstrategy(momentum_factor_strategy) 
+cerebro.addstrategy(momentum_factor_strategy)
 cerebro.addobserver(bt.observers.Value)
 
 #添加Analyzer
@@ -377,7 +376,7 @@ print('Max DrawDown:',
 # 打印各个分析器内容
 for a in thestrat.analyzers:
     a.print()
-cerebro.plot() 
+cerebro.plot()
 #获取回测结束后的总资金
 portvalue = cerebro.broker.getvalue()
 pnl = portvalue - startcash
@@ -385,4 +384,4 @@ pnl = portvalue - startcash
 print(f'总资金: {round(portvalue,2)}')
 print(f'净收益: {round(pnl,2)}')
 end_time=time.time()
-print("一共使用时间为:{}".format(end_time-begin_time))
+print(f"一共使用时间为:{end_time - begin_time}")
